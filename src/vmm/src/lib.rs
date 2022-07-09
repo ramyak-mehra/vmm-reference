@@ -319,7 +319,6 @@ impl TryFrom<VMMConfig> for Vmm {
         vmm.add_i8042_device()?;
         #[cfg(target_arch = "aarch64")]
         vmm.add_rtc_device()?;
-
         // Adding the virtio devices. We'll come up with a cleaner abstraction for `Env`.
         if let Some(cfg) = config.block_config.as_ref() {
             vmm.add_block_device(cfg)?;
@@ -523,7 +522,7 @@ impl Vmm {
             )?;
             self.fdt_builder
                 .with_serial_console(range.start(), range.len());
-            let range = mmio_from_range(range);
+            let range = mmio_from_range(&range);
             self.device_mgr
                 .lock()
                 .unwrap()
@@ -564,7 +563,7 @@ impl Vmm {
             DEFAULT_ALLOC_POLICY,
         )?;
         self.fdt_builder.with_rtc(range.start(), range.len());
-        let range = mmio_from_range(range);
+        let range = mmio_from_range(&range);
         self.device_mgr
             .lock()
             .unwrap()
@@ -584,8 +583,9 @@ impl Vmm {
             DEFAULT_ADDRESSS_ALIGNEMNT,
             DEFAULT_ALLOC_POLICY,
         )?;
-        let range = mmio_from_range(range);
-        let mmio_cfg = MmioConfig { range, gsi: 5 };
+
+        let mmio_range = mmio_from_range(&range);
+        let mmio_cfg = MmioConfig { range:mmio_range, gsi: 5 };
 
         let mut guard = self.device_mgr.lock().unwrap();
 
@@ -607,6 +607,8 @@ impl Vmm {
 
         // We can also hold this somewhere if we need to keep the handle for later.
         let block = Block::new(&mut env, &args).map_err(Error::Block)?;
+        #[cfg(target_arch="aarch64")]
+        self.fdt_builder.add_virito_device(range.start(), range.len(), 5);
         self.block_devices.push(block);
 
         Ok(())
@@ -619,8 +621,8 @@ impl Vmm {
             DEFAULT_ADDRESSS_ALIGNEMNT,
             DEFAULT_ALLOC_POLICY,
         )?;
-        let range = mmio_from_range(range);
-        let mmio_cfg = MmioConfig { range, gsi: 6 };
+        let mmio_range = mmio_from_range(&range);
+        let mmio_cfg = MmioConfig { range:mmio_range, gsi: 6 };
 
         let mut guard = self.device_mgr.lock().unwrap();
 
@@ -640,7 +642,8 @@ impl Vmm {
         // We can also hold this somewhere if we need to keep the handle for later.
         let net = Net::new(&mut env, &args).map_err(Error::Net)?;
         self.net_devices.push(net);
-
+        #[cfg(target_arch="aarch64")]
+        self.fdt_builder.add_virito_device(range.start(), range.len(), 6);
         Ok(())
     }
 
@@ -693,6 +696,7 @@ impl Vmm {
         let mem_size: u64 = self.guest_memory.iter().map(|region| region.len()).sum();
         let fdt_offset = mem_size - AARCH64_FDT_MAX_SIZE - 0x10000;
         let cmdline = &self.kernel_cfg.cmdline;
+        println!("{:?}" , self.block_devices.len());
         let fdt = self
             .fdt_builder
             .with_cmdline(cmdline.as_str().to_string())
@@ -706,7 +710,7 @@ impl Vmm {
     }
 }
 
-fn mmio_from_range(range: RangeInclusive) -> MmioRange {
+fn mmio_from_range(range: &RangeInclusive) -> MmioRange {
     // The following unwrap is safe because the address allocator makes
     // sure that the address is available and correct
     MmioRange::new(MmioAddress(range.start()), range.len()).unwrap()
@@ -1069,7 +1073,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(target_arch = "x86_64")]
     // FIXME: We cannot run this on aarch64 because we do not have an image that just runs and
     // FIXME-continued: halts afterwards. Once we have this, we need to update `default_vmm_config`
     // FIXME-continued: and have a default PE image on aarch64.
@@ -1084,6 +1087,8 @@ mod tests {
 
         assert!(vmm.add_block_device(&block_config).is_ok());
         assert_eq!(vmm.block_devices.len(), 1);
+        assert_eq!(vmm.fdt_builder.virito_device_len() , 1);
+        #[cfg(target_arch="aarch64")]
         assert!(vmm.kernel_cfg.cmdline.as_str().contains("virtio"));
 
         let invalid_block_config = BlockConfig {
@@ -1099,7 +1104,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(target_arch = "x86_64")]
     // FIXME: We cannot run this on aarch64 because we do not have an image that just runs and
     // FIXME-continued: halts afterwards. Once we have this, we need to update `default_vmm_config`
     // FIXME-continued: and have a default PE image on aarch64.
@@ -1116,6 +1120,8 @@ mod tests {
         {
             assert!(vmm.add_net_device(&cfg).is_ok());
             assert_eq!(vmm.net_devices.len(), 1);
+            #[cfg(target_arch="aarch64")]
+            assert_eq!(vmm.fdt_builder.virito_device_len() , 1);
             assert!(vmm.kernel_cfg.cmdline.as_str().contains("virtio"));
         }
     }

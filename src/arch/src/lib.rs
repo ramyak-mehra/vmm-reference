@@ -69,6 +69,8 @@ pub struct FdtBuilder {
     num_vcpus: Option<u32>,
     serial_console: Option<(u64, u64)>,
     rtc: Option<(u64, u64)>,
+    // It is in the order(addr , size , irq)
+    virtio_devices: Vec<(u64, u64, u32)>,
 }
 
 impl FdtBuilder {
@@ -100,7 +102,13 @@ impl FdtBuilder {
         self.rtc = Some((addr, size));
         self
     }
-
+    pub fn add_virito_device(&mut self, addr: u64, size: u64, irq: u32) -> &mut Self {
+        self.virtio_devices.push((addr, size, irq));
+        self
+    }
+    pub fn virito_device_len(&self)->usize{
+        self.virtio_devices.len()
+    }
     pub fn create_fdt(&self) -> Result<Fdt> {
         let mut fdt = FdtWriter::new()?;
 
@@ -136,7 +144,9 @@ impl FdtBuilder {
         create_timer_node(&mut fdt, num_vcpus)?;
         create_psci_node(&mut fdt)?;
         create_pmu_node(&mut fdt, num_vcpus)?;
-
+        for config in &self.virtio_devices {
+            create_virito_node(&mut fdt, config.0, config.1, config.2)?;
+        }
         fdt.end_node(root_node)?;
 
         Ok(Fdt {
@@ -319,10 +329,46 @@ fn create_rtc_node(fdt: &mut FdtWriter, rtc_addr: u64, size: u64) -> Result<()> 
     Ok(())
 }
 
+fn create_virito_node(fdt: &mut FdtWriter, addr: u64, size: u64, irq: u32) -> Result<()> {
+    let virito_mmio = fdt.begin_node(&format!("virtio_mmio@{:x}", addr))?;
+    fdt.property_string("compatible", "virtio,mmio")?;
+    fdt.property_array_u64("reg", &[addr, size])?;
+    fdt.property_array_u32(
+        "interrupts",
+        &[GIC_FDT_IRQ_TYPE_SPI, irq, IRQ_TYPE_EDGE_RISING],
+    )?;
+    fdt.property_array_u32("interrupt-parent", &[PHANDLE_GIC])?;
+    fdt.end_node(virito_mmio)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::FdtBuilder;
+    use vm_fdt::FdtWriter;
 
+    use crate::{create_virito_node, FdtBuilder};
+    #[test]
+    fn test_adding_virtio() {
+        let mut fdt = FdtBuilder::new();
+        let fdt = fdt.add_virito_device(0x1000, 1000, 5);
+        assert_eq!(fdt.virtio_devices.len(), 1);
+        let mut fdt = FdtWriter::new().unwrap();
+        let _ = create_virito_node(&mut fdt, 0x10000, 1000, 5).unwrap();
+        let correct_bytes = vec![
+            208, 13, 254, 237, 0, 0, 0, 223, 0, 0, 0, 56, 0, 0, 0, 180, 0, 0, 0, 40, 0, 0, 0, 17,
+            0, 0, 0, 16, 0, 0, 0, 0, 0, 0, 0, 43, 0, 0, 0, 124, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 1, 118, 105, 114, 116, 105, 111, 95, 109, 109, 105, 111, 64, 49,
+            48, 48, 48, 48, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 12, 0, 0, 0, 0, 118, 105, 114, 116, 105,
+            111, 44, 109, 109, 105, 111, 0, 0, 0, 0, 3, 0, 0, 0, 16, 0, 0, 0, 11, 0, 0, 0, 0, 0, 1,
+            0, 0, 0, 0, 0, 0, 0, 0, 3, 232, 0, 0, 0, 3, 0, 0, 0, 12, 0, 0, 0, 15, 0, 0, 0, 0, 0, 0,
+            0, 5, 0, 0, 0, 1, 0, 0, 0, 3, 0, 0, 0, 4, 0, 0, 0, 26, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0,
+            9, 99, 111, 109, 112, 97, 116, 105, 98, 108, 101, 0, 114, 101, 103, 0, 105, 110, 116,
+            101, 114, 114, 117, 112, 116, 115, 0, 105, 110, 116, 101, 114, 114, 117, 112, 116, 45,
+            112, 97, 114, 101, 110, 116, 0,
+        ];
+        let fdt_blob = fdt.finish().unwrap();
+        assert_eq!(correct_bytes , fdt_blob);
+    }
     #[test]
     fn test_create_fdt() {
         let fdt_ok = FdtBuilder::new()
