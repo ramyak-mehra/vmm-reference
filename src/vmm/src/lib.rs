@@ -177,6 +177,10 @@ pub enum Error {
     SetupFdt(arch::Error),
     /// IrqAllocator error
     IrqAllocator(irq_allocator::Error),
+    /// Multiple root bloc device found.
+    MultipleRootBlockDevice,
+    /// No root bloc device found.
+    NoRootBlockDevice,
 }
 
 impl std::convert::From<vm::Error> for Error {
@@ -596,44 +600,56 @@ impl Vmm {
     // can do it after figuring out how to better separate concerns and make the VMM agnostic of
     // the actual device types.
     fn add_block_device(&mut self, cfg: &BlockConfig) -> Result<()> {
-        let mem = Arc::new(self.guest_memory.clone());
-        let range = self.address_allocator.allocate(
-            0x1000,
-            DEFAULT_ADDRESSS_ALIGNEMNT,
-            DEFAULT_ALLOC_POLICY,
-        )?;
-        let irq = self.irq_allocator.next_irq()?;
-        let mmio_range = mmio_from_range(&range);
-        let mmio_cfg = MmioConfig {
-            range: mmio_range,
-            gsi: irq,
-        };
+        let mut root_added = false;
+        for args in cfg.block_args {
+            if args.is_root {
+                match root_added {
+                    true => return Err(Error::MultipleRootBlockDevice),
+                    false => root_added = true,
+                }
+            }
 
-        let mut guard = self.device_mgr.lock().unwrap();
+            let mem = Arc::new(self.guest_memory.clone());
+            let range = self.address_allocator.allocate(
+                0x1000,
+                DEFAULT_ADDRESSS_ALIGNEMNT,
+                DEFAULT_ALLOC_POLICY,
+            )?;
+            let irq = self.irq_allocator.next_irq()?;
+            let mmio_range = mmio_from_range(&range);
+            let mmio_cfg = MmioConfig {
+                range: mmio_range,
+                gsi: irq,
+            };
 
-        let mut env = Env {
-            mem,
-            vm_fd: self.vm.vm_fd(),
-            event_mgr: &mut self.event_mgr,
-            mmio_mgr: guard.deref_mut(),
-            mmio_cfg,
-            kernel_cmdline: &mut self.kernel_cfg.cmdline,
-        };
+            let mut guard = self.device_mgr.lock().unwrap();
 
-        let args = BlockArgs {
-            file_path: PathBuf::from(&cfg.path),
-            read_only: false,
-            root_device: true,
-            advertise_flush: true,
-        };
+            let mut env = Env {
+                mem,
+                vm_fd: self.vm.vm_fd(),
+                event_mgr: &mut self.event_mgr,
+                mmio_mgr: guard.deref_mut(),
+                mmio_cfg,
+                kernel_cmdline: &mut self.kernel_cfg.cmdline,
+            };
 
-        // We can also hold this somewhere if we need to keep the handle for later.
-        let block = Block::new(&mut env, &args).map_err(Error::Block)?;
-        #[cfg(target_arch = "aarch64")]
-        self.fdt_builder
-            .add_virtio_device(range.start(), range.len(), irq);
-        self.block_devices.push(block);
+            let args = BlockArgs {
+                file_path: PathBuf::from(&args.path),
+                read_only: args.read_only,
+                root_device: args.is_root,
+                advertise_flush: true,
+            };
 
+            // We can also hold this somewhere if we need to keep the handle for later.
+            let block = Block::new(&mut env, &args).map_err(Error::Block)?;
+            #[cfg(target_arch = "aarch64")]
+            self.fdt_builder
+                .add_virtio_device(range.start(), range.len(), irq);
+            self.block_devices.push(block);
+        }
+        if !root_added {
+            return Err(Error::NoRootBlockDevice);
+        }
         Ok(())
     }
 
@@ -1111,7 +1127,11 @@ mod tests {
 
         let tempfile = TempFile::new().unwrap();
         let block_config = BlockConfig {
-            path: tempfile.as_path().to_path_buf(),
+            block_args: vec![CustomBlockArgs {
+                is_root: true,
+                read_only: false,
+                path: tempfile.as_path().to_path_buf(),
+            }],
         };
 
         assert!(vmm.add_block_device(&block_config).is_ok());
@@ -1123,13 +1143,47 @@ mod tests {
         let invalid_block_config = BlockConfig {
             // Let's create the tempfile directly here so that it gets out of scope immediately
             // and delete the underlying file.
-            path: TempFile::new().unwrap().as_path().to_path_buf(),
+            block_args: vec![CustomBlockArgs {
+                is_root: true,
+                read_only: false,
+                path: tempfile.as_path().to_path_buf(),
+            }],
         };
 
         let err = vmm.add_block_device(&invalid_block_config).unwrap_err();
         assert!(
             matches!(err, Error::Block(block::Error::OpenFile(io_err)) if io_err.kind() == ErrorKind::NotFound)
         );
+        // Let's create a config with no root device specified.
+        let tempfile = TempFile::new().unwrap();
+        let block_config = BlockConfig {
+            block_args: vec![CustomBlockArgs {
+                is_root: false,
+                read_only: false,
+                path: tempfile.as_path().to_path_buf(),
+            }],
+        };
+        // Test with multiple root device.
+        let err = vmm.add_block_device(&block_config);
+        assert!(err.is_err());
+        let tempfile = TempFile::new().unwrap();
+        let block_config = BlockConfig {
+            block_args: vec![
+                CustomBlockArgs {
+                    is_root: true,
+                    read_only: false,
+                    path: tempfile.as_path().to_path_buf(),
+                },
+                CustomBlockArgs {
+                    is_root: true,
+                    read_only: false,
+                    path: tempfile.as_path().to_path_buf(),
+                },
+            ],
+        };
+
+        let err = vmm.add_block_device(&block_config);
+        assert!(err.is_err())
     }
 
     #[test]

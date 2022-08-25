@@ -236,9 +236,14 @@ impl TryFrom<&str> for NetConfig {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BlockConfig {
     /// Path to the block device backend.
-    pub path: PathBuf,
+    pub block_args: Vec<CustomBlockArgs>,
 }
-
+#[derive(Clone, Debug, PartialEq)]
+pub struct CustomBlockArgs {
+    pub path: PathBuf,
+    pub is_root: bool,
+    pub read_only: bool,
+}
 impl TryFrom<&str> for BlockConfig {
     type Error = ConversionError;
 
@@ -250,6 +255,10 @@ impl TryFrom<&str> for BlockConfig {
             .value_of("path")
             .map_err(ConversionError::new_block)?
             .ok_or_else(|| ConversionError::new_block("Missing required argument: path"))?;
+        let is_root: bool = arg_parser
+            .value_of("root")
+            .map_err(ConversionError::new_block)?
+            .unwrap_or(false);
 
         arg_parser
             .all_consumed()

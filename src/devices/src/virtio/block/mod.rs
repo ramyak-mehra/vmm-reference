@@ -8,8 +8,10 @@ mod queue_handler;
 use std::fs::File;
 use std::io::{self, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use virtio_blk::stdio_executor;
+use vm_memory::GuestAddressSpace;
 
 use crate::virtio::features::{VIRTIO_F_IN_ORDER, VIRTIO_F_RING_EVENT_IDX, VIRTIO_F_VERSION_1};
 
@@ -34,6 +36,7 @@ pub enum Error {
     Virtio(crate::virtio::Error),
     OpenFile(io::Error),
     Seek(io::Error),
+    RootDeviceExists,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -96,6 +99,41 @@ impl BlockArgs {
             }
         }
         s
+    }
+}
+
+struct BlocksList {
+    args_list: Vec<BlockArgs>,
+}
+
+impl BlocksList {
+    fn new() -> Self {
+        Self {
+            args_list: Vec::new(),
+        }
+    }
+    fn has_root_device(&self) -> bool {
+        if let Some(args) = self.args_list.get(0) {
+            args.root_device
+        } else {
+            false
+        }
+    }
+    fn insert(&mut self, args: BlockArgs) -> Result<()> {
+        let has_root_block = self.has_root_device();
+        if args.root_device && has_root_block {
+            return Err(Error::RootDeviceExists);
+        }
+        if args.root_device {
+            self.args_list.insert(0, args);
+        } else {
+            self.args_list.push(args);
+        }
+        Ok(())
+    }
+
+    fn add_device<M: GuestAddressSpace>() -> Result<Vec<Arc<Mutex<Block<M>>>>> {
+        todo!()
     }
 }
 
