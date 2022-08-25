@@ -71,9 +71,10 @@ where
         // Register the device on the MMIO bus.
         env.register_mmio_device(block.clone())
             .map_err(Error::Virtio)?;
-
-        env.insert_cmdline_str(args.cmdline_config_substring())
-            .map_err(Error::Virtio)?;
+        if args.root_device {
+            env.insert_cmdline_str(args.cmdline_config_substring())
+                .map_err(Error::Virtio)?;
+        }
 
         Ok(block)
     }

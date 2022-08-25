@@ -49,6 +49,7 @@ impl Cli {
                     .long("block")
                     .required(false)
                     .takes_value(true)
+                    .multiple(true)
                     .help("Block device configuration. \n\tFormat: \"path=<string>\"")
             );
 
@@ -62,6 +63,10 @@ impl Cli {
             eprintln!("{}", help_msg);
             format!("Invalid command line arguments: {}", e)
         })?;
+        let block_occurences = matches.occurrences_of("block");
+        println!("occur {}", block_occurences);
+        let block_values = matches.values_of("block").unwrap();
+        println!("{:?}", block_values);
 
         VMMConfig::builder()
             .memory_config(matches.value_of("memory"))
@@ -254,5 +259,25 @@ mod tests {
                 net_config: None,
             }
         );
+    }
+
+    #[test]
+    fn test_multiple_block() {
+        let r = Cli::launch(vec![
+            "foobar",
+            "--memory",
+            "size_mib=128",
+            "--vcpu",
+            "num=",
+            "--kernel",
+            "path=/foo/bar,cmdline=\"foo=bar\",kernel_load_addr=42",
+            "--block",
+            "path=sfdfd/sdsfd",
+            "root=true",
+            "--block",
+            "path=sdd/sdsd",
+            "root=false",
+        ]);
+        println!("{:?}", r);
     }
 }
