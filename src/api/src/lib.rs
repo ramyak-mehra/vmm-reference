@@ -49,7 +49,7 @@ impl Cli {
                     .long("block")
                     .required(false)
                     .takes_value(true)
-                    .multiple(true)
+                    .min_values(1)
                     .help("Block device configuration. \n\tFormat: \"path=<string>\"")
             );
 
@@ -63,17 +63,16 @@ impl Cli {
             eprintln!("{}", help_msg);
             format!("Invalid command line arguments: {}", e)
         })?;
-        let block_occurences = matches.occurrences_of("block");
-        println!("occur {}", block_occurences);
-        let block_values = matches.values_of("block").unwrap();
-        println!("{:?}", block_values);
-
+        let block: Option<Vec<_>> = match matches.values_of("block") {
+            Some(block_args) => Some(block_args.collect()),
+            None => None,
+        };
         VMMConfig::builder()
             .memory_config(matches.value_of("memory"))
             .kernel_config(matches.value_of("kernel"))
             .vcpu_config(matches.value_of("vcpu"))
             .net_config(matches.value_of("net"))
-            .block_config(matches.value_of("block"))
+            .block_config(block)
             .build()
             .map_err(|e| format!("{:?}", e))
     }
@@ -260,24 +259,20 @@ mod tests {
             }
         );
     }
-
     #[test]
-    fn test_multiple_block() {
-        let r = Cli::launch(vec![
+    fn test_args() {
+        Cli::launch(vec![
             "foobar",
             "--memory",
             "size_mib=128",
             "--vcpu",
-            "num=",
+            "num=1",
             "--kernel",
-            "path=/foo/bar,cmdline=\"foo=bar\",kernel_load_addr=42",
+            "path=/foo/bar,cmdline=\"foo=bar bar=foo\",kernel_load_addr=42",
             "--block",
-            "path=sfdfd/sdsfd",
-            "root=true",
-            "--block",
-            "path=sdd/sdsd",
-            "root=false",
-        ]);
-        println!("{:?}", r);
+            "path=/path,root=true",
+            "path=/path2,root=false",
+        ])
+        .unwrap();
     }
 }

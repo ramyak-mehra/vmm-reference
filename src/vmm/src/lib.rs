@@ -290,7 +290,7 @@ impl TryFrom<VMMConfig> for Vmm {
 
     fn try_from(config: VMMConfig) -> Result<Self> {
         let kvm = Kvm::new().map_err(Error::KvmIoctl)?;
-
+        println!("{:?}", config);
         // Check that the KVM on the host is supported.
         let kvm_api_ver = kvm.get_api_version();
         if kvm_api_ver != KVM_API_VERSION as i32 {
@@ -601,7 +601,7 @@ impl Vmm {
     // the actual device types.
     fn add_block_device(&mut self, cfg: &BlockConfig) -> Result<()> {
         let mut root_added = false;
-        for args in cfg.block_args {
+        for args in &cfg.block_args {
             if args.is_root {
                 match root_added {
                     true => return Err(Error::MultipleRootBlockDevice),

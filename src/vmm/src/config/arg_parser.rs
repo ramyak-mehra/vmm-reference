@@ -22,7 +22,7 @@ impl fmt::Display for CfgArgParseError {
         }
     }
 }
-
+#[derive(Debug)]
 pub(super) struct CfgArgParser {
     args: HashMap<String, String>,
 }
@@ -82,6 +82,41 @@ impl fmt::Display for CfgArgParser {
         )
     }
 }
+
+pub(super) fn parse_multi_values<'a>(values: Vec<&'a str>, key: &'a str) -> Vec<String> {
+    let mut values = Vec::from(values);
+    let mut result = Vec::new();
+    let start = values.remove(0);
+    let mut iter = start.splitn(2, '=');
+    let param_name = iter.next().unwrap();
+    if param_name != key {
+        //TODO:return error
+    }
+    let value = iter.next().unwrap();
+    let mut a = format!("{}={}", param_name, value);
+    for value in values {
+        if value.starts_with(&key) {
+            result.push(a);
+            a = value.to_string();
+        } else {
+            a = format!("{},{}", a, value)
+        }
+    }
+    //Earlier
+    // "path=/path,root=true" from &str to block_config
+
+    //multiple_block_args-> customargs.
+    //1 block_config-> vec![custom_args]
+
+    //`--block path=/path root=true  ro=false –-block path=/path2 , root=true`
+    //vec![path=/path , root=true , ro=false , path=/path2 , root=true]
+
+    //vec!["path=/path,root=true" , "path=/path2"]
+    result.push(a);
+    // assert_eq!(result.len(), count);
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -126,5 +161,20 @@ mod tests {
             .is_none());
 
         Ok(())
+    }
+
+    #[test]
+    fn test_parse_multi_values() {
+        let values = vec![
+            "path=/path",
+            "root=true",
+            "ro=false",
+            "path=/path2",
+            "root=false",
+        ];
+        let result = parse_multi_values(values, "path");
+        for parser in result {
+            println!("{:?}", parser)
+        }
     }
 }
