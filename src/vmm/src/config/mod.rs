@@ -13,8 +13,6 @@ use linux_loader::cmdline::Cmdline;
 use arg_parser::CfgArgParser;
 use builder::Builder;
 
-use self::arg_parser::parse_multi_values;
-
 use super::{DEFAULT_KERNEL_CMDLINE, DEFAULT_KERNEL_LOAD_ADDR};
 
 mod arg_parser;
@@ -242,6 +240,18 @@ pub struct BlockConfig {
     pub block_args: Vec<CustomBlockArgs>,
 }
 
+impl TryFrom<Vec<&str>> for BlockConfig {
+    type Error = ConversionError;
+
+    fn try_from(args: Vec<&str>) -> Result<Self, Self::Error> {
+        let mut block_args: Vec<CustomBlockArgs> = Vec::with_capacity(args.len());
+        for arg in args {
+            let custom_block_arg = arg.try_into()?;
+            block_args.push(custom_block_arg);
+        }
+        Ok(BlockConfig { block_args })
+    }
+}
 /// Block Args to parse.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CustomBlockArgs {
@@ -253,18 +263,6 @@ pub struct CustomBlockArgs {
     pub read_only: bool,
 }
 
-impl TryFrom<Vec<&str>> for BlockConfig {
-    type Error = ConversionError;
-
-    fn try_from(args: Vec<&str>) -> Result<Self, Self::Error> {
-         let mut block_args: Vec<CustomBlockArgs> = Vec::with_capacity(args.len());
-        for arg in args {
-            let custom_block_arg = arg.try_into()?;
-            block_args.push(custom_block_arg);
-        }
-        Ok(BlockConfig { block_args })
-    }
-}
 impl TryFrom<&str> for CustomBlockArgs {
     type Error = ConversionError;
 
@@ -276,10 +274,12 @@ impl TryFrom<&str> for CustomBlockArgs {
             .value_of("path")
             .map_err(ConversionError::new_block)?
             .ok_or_else(|| ConversionError::new_block("Missing required argument: path"))?;
+
         let is_root: bool = arg_parser
             .value_of("root")
             .map_err(ConversionError::new_block)?
             .unwrap_or(false);
+
         let read_only: bool = arg_parser
             .value_of("ro")
             .map_err(ConversionError::new_block)?
@@ -400,51 +400,64 @@ mod tests {
     }
 
     #[test]
-    fn test_block_config() {
-        // let block_str = "path=/foo/bar";
-        // let block_cfg = BlockConfig::try_from(block_str).unwrap();
-        // // let expected_cfg = BlockConfig {
-        // //     path: PathBuf::from("/foo/bar"),
-        // // };
-        // // assert_eq!(block_cfg, expected_cfg);
+    fn test_custom_block_args() {
+        let block_str = "path=/foo/bar,root=true,ro=true";
+        let block_cfg = CustomBlockArgs::try_from(block_str).unwrap();
+        let expected_cfg = CustomBlockArgs {
+            path: PathBuf::from("/foo/bar"),
+            is_root: true,
+            read_only: true,
+        };
+        assert_eq!(block_cfg, expected_cfg);
 
-        // // Test case: empty string error.
-        // assert!(BlockConfig::try_from("").is_err());
+        // Test case: default values of is_root and read_only
+        let block_str = "path=/foo/bar";
+        let block_cfg = CustomBlockArgs::try_from(block_str).unwrap();
+        let expected_cfg = CustomBlockArgs {
+            path: PathBuf::from("/foo/bar"),
+            is_root: false,
+            read_only: false,
+        };
+        assert_eq!(block_cfg, expected_cfg);
 
-        // // Test case: empty tap name error.
-        // let block_str = "path=";
-        // assert!(BlockConfig::try_from(block_str).is_err());
+        // Test case: empty string error.
+        assert!(CustomBlockArgs::try_from("").is_err());
 
-        // // Test case: invalid string.
-        // let block_str = "blah=blah";
-        // assert!(BlockConfig::try_from(block_str).is_err());
+        // Test case: empty tap name error.
+        let block_str = "path=";
+        assert!(CustomBlockArgs::try_from(block_str).is_err());
 
-        // // Test case: unused parameters
-        // let block_str = "path=/foo/bar,blah=blah";
-        // assert!(BlockConfig::try_from(block_str).is_err());
+        // Test case: invalid string.
+        let block_str = "blah=blah";
+        assert!(CustomBlockArgs::try_from(block_str).is_err());
 
-        let block_args = vec![
-            "path=/path",
-            "root=true",
-            "ro=false",
-            "path=/path2",
-            "root=false",
-        ];
-        let result = BlockConfig::try_from(block_args).unwrap();
-        let block_args = vec![
-            CustomBlockArgs {
-                path: PathBuf::from("/path"),
-                is_root: true,
-                read_only: false,
-            },
-            CustomBlockArgs {
-                path: PathBuf::from("/path2"),
-                is_root: false,
-                read_only: false,
-            },
-        ];
-        let block_config = BlockConfig { block_args };
-        assert_eq!(result, block_config);
+        // Test case: unused parameters
+        let block_str = "path=/foo/bar,blah=blah";
+        assert!(CustomBlockArgs::try_from(block_str).is_err());
+    }
+
+    #[test]
+    fn test_block_config(){
+        let block_args = vec!["path=/foo/bar,ro=true" , "path=/foo/bar2,root=true"];
+        let block_cfg = BlockConfig::try_from(block_args).unwrap();
+        let expected_cfg = BlockConfig{
+            block_args:vec![CustomBlockArgs{
+                path:PathBuf::from("/foo/bar"),
+                is_root:false,
+                read_only:true
+            },CustomBlockArgs{
+                path:PathBuf::from("/foo/bar2"),
+                is_root:true,
+                read_only:false
+            }]
+        };
+        assert_eq!(block_cfg,expected_cfg);
+
+        // Test case: one of the string is invalid
+        let block_args = vec!["path=/foo/bar,buzz=buzz" , "path=/foo/bar2,root=true"];
+        let block_cfg = BlockConfig::try_from(block_args);
+        // error should be propogated from parsing of CustomBlockArgs.
+        assert!(block_cfg.is_err());   
     }
 
     #[test]

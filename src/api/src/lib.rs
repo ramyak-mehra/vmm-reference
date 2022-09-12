@@ -259,20 +259,4 @@ mod tests {
             }
         );
     }
-    #[test]
-    fn test_args() {
-        Cli::launch(vec![
-            "foobar",
-            "--memory",
-            "size_mib=128",
-            "--vcpu",
-            "num=1",
-            "--kernel",
-            "path=/foo/bar,cmdline=\"foo=bar bar=foo\",kernel_load_addr=42",
-            "--block",
-            "path=/path,root=true",
-            "path=/path2,root=false",
-        ])
-        .unwrap();
-    }
 }
