@@ -1146,7 +1146,7 @@ mod tests {
             block_args: vec![CustomBlockArgs {
                 is_root: true,
                 read_only: false,
-                path: tempfile.as_path().to_path_buf(),
+                path: TempFile::new().unwrap().as_path().to_path_buf(),
             }],
         };
 
@@ -1163,9 +1163,10 @@ mod tests {
                 path: tempfile.as_path().to_path_buf(),
             }],
         };
-        // Test with multiple root device.
         let err = vmm.add_block_device(&block_config);
-        assert!(err.is_err());
+        // assert!(matches!(err.unwrap_err() ,Error::P );
+        
+        // Test with multiple root device.
         let tempfile = TempFile::new().unwrap();
         let block_config = BlockConfig {
             block_args: vec![
