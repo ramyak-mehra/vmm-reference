@@ -175,12 +175,12 @@ pub enum Error {
     #[cfg(target_arch = "aarch64")]
     /// Cannot setup the FDT for booting.
     SetupFdt(arch::Error),
-    /// IrqAllocator error
-    IrqAllocatorError(irq_allocator::Error),
     /// Multiple root bloc device found.
     MultipleRootBlockDevice,
     /// No root bloc device found.
     NoRootBlockDevice,
+    /// IrqAllocator error
+    IrqAllocator(irq_allocator::Error),
 }
 
 impl std::convert::From<vm::Error> for Error {
@@ -197,7 +197,7 @@ impl From<vm_allocator::Error> for crate::Error {
 
 impl From<irq_allocator::Error> for crate::Error {
     fn from(error: irq_allocator::Error) -> Self {
-        crate::Error::IrqAllocatorError(error)
+        crate::Error::IrqAllocator(error)
     }
 }
 

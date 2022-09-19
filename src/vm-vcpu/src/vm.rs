@@ -187,7 +187,7 @@ pub trait ExitHandler: Clone {
 }
 
 /// Represents the current state of the VM.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum VmRunState {
     Running,
     Suspending,
@@ -492,7 +492,7 @@ impl<EH: 'static + ExitHandler + Send> KvmVm<EH> {
                 .name(format!("vcpu_{}", id))
                 .spawn(move || {
                     // TODO: Check the result of both vcpu run & kick.
-                    let _ = vcpu.run(vcpu_run_addr).unwrap();
+                    vcpu.run(vcpu_run_addr).unwrap();
                     let _ = vcpu_exit_handler.kick();
                     vcpu.run_state.set_and_notify(VmRunState::Exiting);
                 })
@@ -664,6 +664,21 @@ mod tests {
         let guest_memory = default_memory();
         let res = default_vm(&kvm, &guest_memory, num_vcpus);
         assert!(matches!(res, Err(Error::Mptable(_))));
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn test_max_irq_overflow() {
+        let num_vcpus = 1;
+        let kvm = Kvm::new().unwrap();
+        let guest_memory = default_memory();
+
+        let vm_config = VmConfig::new(&kvm, num_vcpus, u32::MAX).unwrap();
+        let io_manager = Arc::new(Mutex::new(IoManager::new()));
+        let exit_handler = WrappedExitHandler::default();
+        let vm = KvmVm::new(&kvm, vm_config, &guest_memory, exit_handler, io_manager);
+
+        assert!(matches!(vm, Err(Error::IRQMaxValue(_))))
     }
 
     #[test]

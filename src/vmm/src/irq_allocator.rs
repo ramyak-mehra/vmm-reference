@@ -3,7 +3,7 @@
 
 use std::fmt;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Error {
     InvalidValue,
     MaxIrq,
@@ -36,9 +36,6 @@ impl IrqAllocator {
     }
 
     pub fn next_irq(&mut self) -> Result<u32> {
-        // The condition for overflow will never be reached because
-        // last_used_irq is always less than last_irq. So we can't have
-        // u32::MAX as last_used_irq and last_irq value, which would make it overlfow.
         self.last_used_irq
             .checked_add(1)
             .ok_or(Error::IRQOverflowed)
@@ -91,6 +88,6 @@ mod test {
 
         let mut irq_alloc = IrqAllocator::new(u32::MAX - 1, u32::MAX).unwrap();
         assert_eq!(irq_alloc.next_irq(), Ok(u32::MAX));
-        assert!(irq_alloc.next_irq().is_err())
+        assert_eq!(irq_alloc.next_irq(), Err(Error::IRQOverflowed))
     }
 }
